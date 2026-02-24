@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import VideoCapture from "@/components/VideoCapture";
 import AnalysisResult from "@/components/AnalysisResult";
 import LoadingIndicator from "@/components/LoadingIndicator";
+import HistoryList from "@/components/HistoryList";
 import { extractFramesFromVideo } from "@/lib/extractFrames";
+import { addToHistory } from "@/lib/history";
 import type { AnalysisResult as AnalysisResultType } from "@/lib/analyze";
 
 type AppState = "idle" | "extracting" | "analyzing" | "done" | "error";
@@ -14,12 +16,15 @@ export default function Home() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [result, setResult] = useState<AnalysisResultType | null>(null);
   const [error, setError] = useState<string>("");
+  const [historyKey, setHistoryKey] = useState(0);
+  const thumbnailRef = useRef<string | undefined>(undefined);
 
   const handleVideoReady = useCallback((file: File) => {
     setVideoFile(file);
     setResult(null);
     setError("");
     setState("idle");
+    thumbnailRef.current = undefined;
   }, []);
 
   const handleAnalyze = async () => {
@@ -29,6 +34,11 @@ export default function Home() {
       setState("extracting");
 
       const frames = await extractFramesFromVideo(videoFile, 4);
+
+      // 最初のフレームをサムネイルとして保存
+      if (frames.length > 0) {
+        thumbnailRef.current = `data:${frames[0].mediaType};base64,${frames[0].data}`;
+      }
 
       setState("analyzing");
 
@@ -53,6 +63,10 @@ export default function Home() {
       const data = (await response.json()) as AnalysisResultType;
       setResult(data);
       setState("done");
+
+      // 履歴に保存
+      addToHistory(data, thumbnailRef.current);
+      setHistoryKey((prev) => prev + 1);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "予期しないエラーが発生しました"
@@ -66,6 +80,13 @@ export default function Home() {
     setResult(null);
     setError("");
     setState("idle");
+    thumbnailRef.current = undefined;
+  };
+
+  const handleHistorySelect = (historyResult: AnalysisResultType) => {
+    setResult(historyResult);
+    setState("done");
+    setVideoFile(null);
   };
 
   return (
@@ -100,10 +121,12 @@ export default function Home() {
         )}
 
         {/* 動画キャプチャ */}
-        <VideoCapture
-          onVideoReady={handleVideoReady}
-          disabled={state === "extracting" || state === "analyzing"}
-        />
+        {state !== "done" && (
+          <VideoCapture
+            onVideoReady={handleVideoReady}
+            disabled={state === "extracting" || state === "analyzing"}
+          />
+        )}
 
         {/* 分析ボタン */}
         {videoFile && state === "idle" && (
@@ -117,7 +140,7 @@ export default function Home() {
 
         {/* ローディング */}
         {(state === "extracting" || state === "analyzing") && (
-          <LoadingIndicator />
+          <LoadingIndicator stage={state === "extracting" ? "extracting" : "analyzing"} />
         )}
 
         {/* エラー */}
@@ -144,6 +167,14 @@ export default function Home() {
               別の犬を分析する
             </button>
           </>
+        )}
+
+        {/* 履歴 */}
+        {state === "idle" && !videoFile && (
+          <HistoryList
+            onSelectEntry={handleHistorySelect}
+            refreshKey={historyKey}
+          />
         )}
       </main>
 
