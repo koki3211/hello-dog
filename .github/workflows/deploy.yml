@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "claude/dog-thought-ai-service-1iGd5"]
   workflow_dispatch:
 
 permissions:
