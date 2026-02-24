@@ -7,6 +7,7 @@ import LoadingIndicator from "@/components/LoadingIndicator";
 import HistoryList from "@/components/HistoryList";
 import { extractFramesFromVideo } from "@/lib/extractFrames";
 import { addToHistory } from "@/lib/history";
+import { getDemoResult } from "@/lib/demoAnalyze";
 import type { AnalysisResult as AnalysisResultType } from "@/lib/analyze";
 
 type AppState = "idle" | "extracting" | "analyzing" | "done" | "error";
@@ -17,6 +18,7 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResultType | null>(null);
   const [error, setError] = useState<string>("");
   const [historyKey, setHistoryKey] = useState(0);
+  const [isDemo, setIsDemo] = useState(false);
   const thumbnailRef = useRef<string | undefined>(undefined);
 
   const handleVideoReady = useCallback((file: File) => {
@@ -42,25 +44,35 @@ export default function Home() {
 
       setState("analyzing");
 
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          frames: frames.map((f) => ({
-            data: f.data,
-            mediaType: f.mediaType,
-          })),
-        }),
-      });
+      let data: AnalysisResultType;
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => null);
-        throw new Error(
-          errData?.error || `サーバーエラー (${response.status})`
-        );
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            frames: frames.map((f) => ({
+              data: f.data,
+              mediaType: f.mediaType,
+            })),
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => null);
+          throw new Error(
+            errData?.error || `サーバーエラー (${response.status})`
+          );
+        }
+
+        data = (await response.json()) as AnalysisResultType;
+      } catch {
+        // API が使えない場合（GitHub Pages等）はデモ結果を返す
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        data = getDemoResult();
+        setIsDemo(true);
       }
 
-      const data = (await response.json()) as AnalysisResultType;
       setResult(data);
       setState("done");
 
@@ -80,6 +92,7 @@ export default function Home() {
     setResult(null);
     setError("");
     setState("idle");
+    setIsDemo(false);
     thumbnailRef.current = undefined;
   };
 
@@ -159,6 +172,13 @@ export default function Home() {
         {/* 結果表示 */}
         {state === "done" && result && (
           <>
+            {isDemo && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-center">
+                <p className="text-amber-700 text-xs">
+                  デモモードで表示しています。実際のAI分析にはサーバー環境が必要です。
+                </p>
+              </div>
+            )}
             <AnalysisResult result={result} />
             <button
               onClick={handleReset}
